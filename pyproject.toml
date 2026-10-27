@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentsfence"
+version = "0.2.0a9"
+description = "Task-scoped authorization for AI agents: compile user intent into a least-authority policy and enforce it at every tool call. Hermes Agent plugin."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "AgentsFence contributors" }]
+keywords = ["ai-agents", "security", "authorization", "prompt-injection", "hermes", "least-privilege", "guardrails"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+]
+dependencies = [
+  "pydantic>=2.6,<3",
+  "PyYAML>=6.0",
+  "python-dotenv>=1.0",
+  # Doctor lists running Hermes processes with it. Hermes already depends on psutil
+  # (==7.2.2 on every gated revision); outside Hermes (uvx, uv tool) it must be declared.
+  "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "mypy>=1.10", "types-PyYAML", "types-psutil", "fastapi>=0.115", "httpx>=0.27"]
+
+[project.urls]
+Homepage = "https://agentsfence-alpha.vercel.app"
+Documentation = "https://agentsfence-alpha.vercel.app/docs/"
+
+[project.scripts]
+agentsfence = "agentsfence.cli:main"
+
+# Hermes discovers pip-installed plugins through this entry-point group.
+[project.entry-points."hermes_agent.plugins"]
+agentsfence = "agentsfence.plugin"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agentsfence"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"desktop" = "agentsfence/surfaces/desktop"
+"dashboard" = "agentsfence/surfaces/dashboard"
+
+[tool.hatch.build.targets.sdist]
+include = ["agentsfence", "tests", "examples", "README.md", "LICENSE", "plugin.yaml", "__init__.py", "desktop", "dashboard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+packages = ["agentsfence"]

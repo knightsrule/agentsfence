@@ -1,0 +1,12 @@
+name: agentsfence
+version: "0.2.0a9"
+description: "Task-scoped authorization for Hermes. Compiles the user's request into a least-authority policy (pre_llm_call) and enforces it before every tool call (pre_tool_call): ALLOW, BLOCK, or ask the user. Blocks prompt-injected actions, hallucinated destructive actions, and unauthorized sends."
+author: "AgentsFence contributors"
+hooks:
+  - pre_llm_call
+  - pre_tool_call
+  - post_tool_call
+  - post_approval_response
+  - subagent_start
+  - on_session_reset
+  - on_session_finalize

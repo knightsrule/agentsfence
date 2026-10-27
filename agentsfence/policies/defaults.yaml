@@ -1,0 +1,302 @@
+# AgentsFence default configuration.
+#
+# Override any section by placing a YAML file at $AGENTSFENCE_HOME/config.yaml
+# (default: ~/.hermes/agentsfence/config.yaml). Maps are merged key-by-key;
+# lists are replaced.
+#
+# Risk classes: READ, LOCAL_WRITE, EXTERNAL_WRITE, COMMUNICATION, DELETE,
+#               PERMISSION_CHANGE, FINANCIAL, EXECUTION, UNKNOWN
+
+# ---------------------------------------------------------------------------
+# Concrete Hermes tools.
+#   capability:  stable, provider-neutral name used in policies (e.g. email.send)
+#   risk:        default risk class
+#   arg_risk:    override risk by the value of one argument (first match wins)
+#   *_args:      argument names that carry recipients / URLs / file paths
+# ---------------------------------------------------------------------------
+tools:
+  # --- files ---------------------------------------------------------------
+  read_file:      {capability: file.read,   risk: READ,        path_args: [path]}
+  search_files:   {capability: file.search, risk: READ,        path_args: [path]}
+  write_file:     {capability: file.write,  risk: LOCAL_WRITE, path_args: [path]}
+  # mode="patch" takes V4A multi-file patch text with no top-level path: the files
+  # (and any "*** Delete File") are read from the patch headers.
+  patch:          {capability: file.write,  risk: LOCAL_WRITE, path_args: [path], patch_args: [patch]}
+
+  # --- shell / code -------------------------------------------------------
+  # `terminal` is additionally sub-classified by the shell command classifier
+  # (see risk.py): simple read-only commands become READ, `rm` becomes DELETE, etc.
+  terminal:       {capability: shell.exec,  risk: EXECUTION, action_args: [command, workdir, background]}
+  read_terminal:  {capability: shell.read,  risk: READ}
+  close_terminal: {capability: shell.exec,  risk: LOCAL_WRITE}
+  execute_code:   {capability: code.exec,   risk: EXECUTION, action_args: [code]}
+  process:
+    capability: shell.process
+    risk: EXECUTION
+    action_args: [action, session_id, data]
+    arg_risk:
+      action: {list: READ, poll: READ, log: READ, wait: READ}
+
+  # --- web / browser ------------------------------------------------------
+  web_search:       {capability: web.search,       risk: READ}
+  x_search:         {capability: web.search,       risk: READ}
+  web_extract:      {capability: web.fetch,        risk: READ, domain_args: [urls]}
+  browser_navigate: {capability: browser.navigate, risk: READ, domain_args: [url]}
+  browser_snapshot: {capability: browser.read,     risk: READ}
+  browser_back:     {capability: browser.read,     risk: READ}
+  browser_scroll:   {capability: browser.read,     risk: READ}
+  # With `expression`, browser_console evaluates JavaScript in the page (can submit
+  # forms, fetch() anywhere, read cookies): that is code execution, not a read.
+  browser_console:
+    capability: browser.read
+    risk: READ
+    action_args: [expression, clear]
+    arg_present_risk: {expression: EXECUTION}
+  browser_get_images: {capability: browser.read,   risk: READ}
+  browser_vision:   {capability: browser.read,     risk: READ}
+  # Clicking / typing can submit forms, post comments, or buy things.
+  browser_click:    {capability: browser.interact, risk: EXTERNAL_WRITE}
+  browser_type:     {capability: browser.interact, risk: EXTERNAL_WRITE}
+  browser_press:    {capability: browser.interact, risk: EXTERNAL_WRITE}
+  browser_dialog:   {capability: browser.interact, risk: EXTERNAL_WRITE}   # accept / dismiss
+  browser_cdp:      {capability: browser.cdp,      risk: EXECUTION, action_args: [method, params]}
+  computer_use:     {capability: computer.control, risk: EXECUTION}
+
+  # --- messaging ----------------------------------------------------------
+  send_message:
+    capability: message.send
+    risk: COMMUNICATION
+    recipient_args: [target]
+    arg_risk:
+      action: {list: READ}
+  discord:
+    capability: chat.write
+    risk: EXTERNAL_WRITE
+    recipient_args: [channel_id, user_id]
+    arg_risk:
+      action: {fetch_messages: READ, search_members: READ, create_thread: EXTERNAL_WRITE}
+  discord_admin:
+    capability: chat.admin
+    risk: PERMISSION_CHANGE
+    arg_risk:
+      action:
+        list_guilds: READ
+        server_info: READ
+        list_channels: READ
+        channel_info: READ
+        list_roles: READ
+        member_info: READ
+        list_pins: READ
+        pin_message: EXTERNAL_WRITE
+        unpin_message: EXTERNAL_WRITE
+        delete_message: DELETE
+        add_role: PERMISSION_CHANGE
+        remove_role: PERMISSION_CHANGE
+  yb_send_dm:     {capability: message.send, risk: COMMUNICATION, recipient_args: [account_id, target]}
+  yb_send_sticker: {capability: message.send, risk: COMMUNICATION, recipient_args: [account_id, group_code, target]}
+  yb_query_group_info:    {capability: chat.read, risk: READ}
+  yb_query_group_members: {capability: chat.read, risk: READ, read_actions: [find, list_bots, list_all]}
+  yb_search_sticker:      {capability: chat.read, risk: READ}
+  feishu_doc_read:                   {capability: doc.read,    risk: READ}
+  feishu_drive_list_comments:        {capability: doc.read,    risk: READ}
+  feishu_drive_list_comment_replies: {capability: doc.read,    risk: READ}
+  feishu_drive_add_comment:          {capability: doc.comment, risk: COMMUNICATION}
+  feishu_drive_reply_comment:        {capability: doc.comment, risk: COMMUNICATION}
+
+  # --- agent-internal -----------------------------------------------------
+  clarify:        {capability: user.ask,        risk: READ}
+  todo:           {capability: agent.todo,      risk: READ}
+  session_search: {capability: agent.history,   risk: READ}
+  delegate_task:  {capability: agent.delegate,  risk: READ}   # children inherit this policy
+  skills_list:    {capability: skill.read,      risk: READ}
+  skill_view:     {capability: skill.read,      risk: READ}
+  skill_manage:
+    capability: skill.write
+    risk: LOCAL_WRITE
+    arg_risk:
+      action: {delete: DELETE, remove_file: DELETE}
+  # Persistent memory is a prompt-injection persistence vector: writes need authority.
+  memory:
+    capability: agent.memory
+    risk: LOCAL_WRITE
+  # Scheduled jobs run later, outside this task's authority envelope.
+  cronjob:
+    capability: schedule.job
+    risk: EXECUTION
+    arg_risk:
+      action: {list: READ, remove: DELETE, pause: LOCAL_WRITE}
+
+  # --- media --------------------------------------------------------------
+  vision_analyze:   {capability: media.analyze,  risk: READ}
+  video_analyze:    {capability: media.analyze,  risk: READ}
+  image_generate:   {capability: media.generate, risk: LOCAL_WRITE}
+  video_generate:   {capability: media.generate, risk: LOCAL_WRITE}
+  text_to_speech:   {capability: media.generate, risk: LOCAL_WRITE}
+  xai_video_edit:   {capability: media.generate, risk: LOCAL_WRITE}
+  xai_video_extend: {capability: media.generate, risk: LOCAL_WRITE}
+
+  # --- home / media services ----------------------------------------------
+  ha_get_state:     {capability: home.read,    risk: READ}
+  ha_list_entities: {capability: home.read,    risk: READ}
+  ha_list_services: {capability: home.read,    risk: READ}
+  ha_call_service:  {capability: home.control, risk: EXTERNAL_WRITE}
+  # Spotify tools multiplex reads and writes behind `action` (plugins/spotify/tools.py).
+  spotify_search:   {capability: music.read,   risk: READ}
+  spotify_albums:   {capability: music.read,   risk: READ, read_actions: [get, tracks]}
+  spotify_library:
+    capability: music.library
+    risk: READ                       # Hermes defaults action to "list"
+    arg_risk:
+      action: {list: READ, save: EXTERNAL_WRITE, remove: DELETE}
+  spotify_devices:
+    capability: music.devices
+    risk: READ
+    arg_risk:
+      action: {list: READ, transfer: EXTERNAL_WRITE}
+  spotify_playback:
+    capability: music.control
+    risk: EXTERNAL_WRITE
+    arg_risk:
+      action: {get_state: READ, get_currently_playing: READ, recently_played: READ}
+  spotify_queue:
+    capability: music.control
+    risk: EXTERNAL_WRITE
+    arg_risk:
+      action: {get: READ, add: EXTERNAL_WRITE}
+  spotify_playlists:
+    capability: music.playlists
+    risk: EXTERNAL_WRITE
+    arg_risk:
+      action: {list: READ, get: READ, create: EXTERNAL_WRITE, add_items: EXTERNAL_WRITE, update_details: EXTERNAL_WRITE, remove_items: DELETE}
+
+  # --- projects / kanban --------------------------------------------------
+  project_list:   {capability: project.read,  risk: READ}
+  project_create: {capability: project.write, risk: LOCAL_WRITE}
+  project_switch: {capability: project.write, risk: LOCAL_WRITE}
+  kanban_list:        {capability: kanban.read,  risk: READ}
+  kanban_show:        {capability: kanban.read,  risk: READ}
+  kanban_attachments: {capability: kanban.read,  risk: READ}
+
+# ---------------------------------------------------------------------------
+# Glob patterns for tool families (first match wins). `risk: infer` means
+# "classify by verbs in the tool name" (see `verbs` below) and derive the
+# capability as <domain>.<action>.
+# ---------------------------------------------------------------------------
+patterns:
+  - {match: "kanban_*",   capability: kanban.write, risk: LOCAL_WRITE}
+  - {match: "mcp_*",      risk: infer}
+  - {match: "*",          risk: infer}
+
+# Service keywords used to name inferred capabilities (first match wins).
+domains:
+  email:    [gmail, mail, email, outlook, inbox, smtp, imap]
+  calendar: [calendar, gcal, event, meeting]
+  file:     [drive, dropbox, box, onedrive, sharepoint, file, files, fs, filesystem, document, doc, docs]
+  chat:     [slack, teams, discord, telegram, whatsapp, signal, chat, channel]
+  repo:     [github, gitlab, bitbucket, repo, git, pr, issue]
+  payment:  [stripe, paypal, bank, payment, wallet, invoice, billing, plaid, brokerage]
+  crm:      [salesforce, hubspot, crm, wealthbox, redtail]
+  web:      [browser, web, http, url, fetch]
+
+# Verb vocabulary for inference. Tool names are split on _ - . and camelCase and
+# tokens are matched exactly. The FIRST token that is a known verb sets the risk
+# class (tool names are usually verb_noun: get_order, send_message). Any token in
+# `strong_verbs` anywhere in the name escalates to that class.
+verbs:
+  FINANCIAL:         [pay, payment, purchase, buy, checkout, transfer, refund, charge, trade, withdraw, deposit, wire, order, subscribe, sell]
+  PERMISSION_CHANGE: [share, permission, permissions, grant, revoke, invite, acl, role, roles, chmod, chown, collaborator, collaborators]
+  DELETE:            [delete, remove, trash, purge, destroy, erase, drop, wipe, rm, unlink, empty]
+  COMMUNICATION:     [send, reply, forward, post, publish, tweet, notify, dm, comment, respond, broadcast, text]
+  EXECUTION:         [exec, execute, run, eval, shell, spawn, script, deploy, invoke]
+  EXTERNAL_WRITE:    [create, update, write, edit, modify, set, put, patch, upload, insert, add, move, rename, label, unlabel, mark, unmark, archive, unarchive, draft, schedule, book, submit, save, copy, apply, enable, disable, start, stop, cancel, untrash, merge, close, open, assign, approve, reject, sync, import, restore]
+  READ:              [get, list, read, search, find, fetch, query, view, show, lookup, describe, download, count, stat, status, inspect, browse, check, retrieve, analyze, summarize, preview, snapshot]
+
+strong_verbs:
+  FINANCIAL:         [pay, purchase, buy, checkout, transfer, refund, withdraw, wire, trade]
+  PERMISSION_CHANGE: [grant, revoke, chmod, chown]
+  DELETE:            [delete, trash, purge, destroy, erase, wipe]
+  COMMUNICATION:     [send, forward, reply]
+  EXECUTION:         [exec, execute, eval]
+
+# Argument names that commonly carry recipients / URLs / paths for inferred tools.
+arg_hints:
+  recipient: [to, cc, bcc, recipient, recipients, email, emails, address, addresses, target, chat_id, channel, channel_id, user, user_id, phone, number, attendees, invitees, share_with, grantee, emailAddress]
+  domain:    [url, urls, uri, link, href, endpoint, domain, host, site, webhook, webhook_url]
+  path:      [path, paths, file, file_path, filepath, filename, dir, directory, target_path, source_path, dest, destination]
+
+# ---------------------------------------------------------------------------
+# What happens when a call is not covered by the task policy.
+# ---------------------------------------------------------------------------
+evaluation:
+  # Consequential capability not mentioned by the user -> ask, or block outright.
+  unauthorized:
+    LOCAL_WRITE: ASK_USER
+    EXTERNAL_WRITE: ASK_USER
+    COMMUNICATION: ASK_USER
+    EXECUTION: ASK_USER
+    DELETE: BLOCK
+    PERMISSION_CHANGE: BLOCK
+    FINANCIAL: BLOCK
+    UNKNOWN: ASK_USER
+    READ: ALLOW
+  # READ classification derived only from verbs in the name (e.g. mcp_foo_get_thing).
+  trust_inferred_reads: true
+  # When no policy exists for a session (hook ordering problem, plugin loaded mid-session):
+  #   fallback -> apply the fallback policy below (reads only)
+  #   block    -> block every tool call
+  missing_policy: fallback
+  # When Hermes is in --yolo mode, the approval gate auto-approves. With
+  # strict_yolo=true AgentsFence turns ASK_USER into BLOCK instead. (Under the
+  # read-only fallback policy ASK_USER always becomes BLOCK in auto-approve modes.)
+  strict_yolo: false
+
+# Policy used when compilation fails or a session has no policy.
+fallback_policy:
+  purpose: fallback_read_only
+  summary: "Policy compilation unavailable. Read-only access; consequential actions require approval or are blocked."
+  allowed_risk_classes: [READ]
+  allow_local_writes: false
+  allow_external_writes: false
+  allow_destructive_actions: false
+  allow_financial_actions: false
+  allow_execution: false
+
+compiler:
+  provider: hermes              # Hermes routes and authenticates every compile
+  # inherit: the profile's default model (AgentsFence keeps Hermes' compiler slot on it);
+  # selected: a dedicated model chosen with `agentsfence settings --model`.
+  mode: inherit
+  timeout_seconds: 30
+  max_concurrent_requests: 4    # bounded provider workers shared by this compiler
+  max_request_chars: 8000
+  # How later user turns in the same session are handled:
+  #   amend -> compile the new message and merge (new denies always win)
+  #   keep  -> keep the first-turn policy unchanged
+  followup: amend
+
+policy:
+  ttl_hours: 12
+  inject_summary: true           # add a short policy note to the model's context
+
+audit:
+  enabled: true
+  # Argument keys whose values are always kept in the audit log (recipients, URLs, paths).
+  keep_keys: [to, cc, bcc, recipient, recipients, target, url, urls, path, file_path, domain, action, chat_id, channel]
+  max_value_chars: 200
+  max_bytes: 10000000            # rotate audit.jsonl beyond this size
+  retention_days: 90             # remove rotated audit files older than this
+
+guards:
+  # Communications need a recipient the user actually named (or approval).
+  require_bound_recipients: true
+  # URLs whose query/path look like smuggled data -> ASK_USER.
+  exfil_url:
+    enabled: true
+    max_query_chars: 200
+    max_segment_chars: 120
+    max_token_chars: 64
+  # Paths the agent may never modify (in addition to AgentsFence's own state,
+  # the plugin install dir, and Hermes config/.env which are always protected).
+  protected_paths: []
+  # Files whose *reading* needs approval (secrets).
+  secret_paths: ["~/.hermes/.env", "~/.hermes/auth.json", "~/.ssh", "~/.aws/credentials", "~/.config/gcloud", "~/.netrc"]
